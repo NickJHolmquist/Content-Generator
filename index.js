@@ -1,85 +1,190 @@
-/**
- * Cloudflare Worker — Kit → GitHub Actions webhook bridge
- *
- * Deploy this as a free Cloudflare Worker.
- * It receives Kit's broadcast.sent webhook and fires a
- * GitHub Actions repository_dispatch event to kick off the pipeline.
- *
- * Setup:
- * 1. Create a free Cloudflare account at cloudflare.com
- * 2. Go to Workers & Pages → Create Worker
- * 3. Paste this code in
- * 4. Add these environment variables in the Worker settings:
- *    - GITHUB_TOKEN      → a GitHub Personal Access Token with repo scope
- *    - GITHUB_OWNER      → your GitHub username
- *    - GITHUB_REPO       → your pipeline repo name
- *    - WEBHOOK_SECRET    → any random string (you'll set the same value in Kit)
- * 5. Copy your Worker URL (e.g. https://kit-bridge.yourname.workers.dev)
- * 6. In Kit: Settings → Webhooks → Add webhook
- *    URL: your Worker URL
- *    Event: broadcast.sent
- */
+import Anthropic from "@anthropic-ai/sdk";
+import fs from "fs";
+import path from "path";
+import "dotenv/config";
 
-export default {
-  async fetch(request, env) {
-    // Only accept POST requests
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
+// ─── Config ────────────────────────────────────────────────────────────────
+
+const NEWSLETTER_DIR = process.env.NEWSLETTER_DIR ?? "./newsletter/inbox";
+const PROCESSED_DIR = process.env.PROCESSED_DIR ?? "./newsletter/processed";
+const THREADS_PER_NEWSLETTER = parseInt(process.env.THREADS_PER_NEWSLETTER ?? "5");
+const SCHEDULE_OFFSET_DAYS = parseInt(process.env.SCHEDULE_OFFSET_DAYS ?? "1");
+const DRY_RUN = process.env.DRY_RUN === "true";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ─── Step 1: Find this week's newsletter ───────────────────────────────────
+
+function findNewsletter() {
+  if (!fs.existsSync(NEWSLETTER_DIR)) {
+    fs.mkdirSync(NEWSLETTER_DIR, { recursive: true });
+  }
+
+  const files = fs
+    .readdirSync(NEWSLETTER_DIR)
+    .filter((f) => f.endsWith(".txt") || f.endsWith(".md"));
+
+  if (files.length === 0) {
+    console.log(`No newsletter found in ${NEWSLETTER_DIR}. Nothing to do.`);
+    return null;
+  }
+
+  if (files.length > 1) {
+    console.warn(`Multiple files found — using the first: ${files[0]}`);
+  }
+
+  const filePath = path.join(NEWSLETTER_DIR, files[0]);
+  const content = fs.readFileSync(filePath, "utf-8").trim();
+  console.log(`📬 Found newsletter: ${files[0]} (${content.length} chars)`);
+
+  return { filePath, fileName: files[0], content };
+}
+
+// ─── Step 2: Load system prompt ────────────────────────────────────────────
+
+function loadSystemPrompt() {
+  const promptPath = "./prompts/system.txt";
+  if (!fs.existsSync(promptPath)) {
+    throw new Error(`System prompt not found at ${promptPath}`);
+  }
+  return fs.readFileSync(promptPath, "utf-8").trim();
+}
+
+// ─── Step 3: Generate threads via Claude API ───────────────────────────────
+
+async function generateThreads(newsletterContent, systemPrompt) {
+  console.log(`🤖 Sending to Claude — generating ${THREADS_PER_NEWSLETTER} threads...`);
+
+  const userMessage = `
+Here is this week's newsletter. Please generate exactly ${THREADS_PER_NEWSLETTER} thread drafts from it.
+
+---
+${newsletterContent}
+---
+
+Remember: return only the JSON array, nothing else.
+`.trim();
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 2000,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  });
+
+  const rawText = response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+
+  // Strip any accidental markdown fences before parsing
+  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+
+  let threads;
+  try {
+    threads = JSON.parse(cleaned);
+  } catch (err) {
+    console.error("Failed to parse Claude response as JSON:", rawText);
+    throw new Error("Claude returned malformed JSON. Check your system prompt.");
+  }
+
+  console.log(`✅ Generated ${threads.length} thread drafts`);
+  return threads;
+}
+
+// ─── Step 4: Format threads for Typefully ──────────────────────────────────
+//
+// Typefully expects thread tweets separated by "\n\n---\n\n"
+// Docs: https://typefully.com/developer
+
+function formatForTypefully(thread) {
+  return thread.tweets.join("\n\n---\n\n");
+}
+
+function scheduleDateForPost(indexFromToday) {
+  // Spreads posts across the week starting SCHEDULE_OFFSET_DAYS from now
+  const date = new Date();
+  date.setDate(date.getDate() + SCHEDULE_OFFSET_DAYS + indexFromToday);
+  date.setHours(9, 0, 0, 0); // 9am — adjust to your preferred send time
+  return date.toISOString();
+}
+
+// ─── Step 5: Push drafts to Typefully ─────────────────────────────────────
+
+async function pushToTypefully(threads) {
+  if (DRY_RUN) {
+    console.log("\n🧪 DRY RUN — would have posted the following to Typefully:\n");
+    threads.forEach((thread, i) => {
+      console.log(`--- Thread ${i + 1}: ${thread.angle} ---`);
+      console.log(formatForTypefully(thread));
+      console.log();
+    });
+    return;
+  }
+
+  console.log(`📤 Pushing ${threads.length} drafts to Typefully...`);
+
+  for (let i = 0; i < threads.length; i++) {
+    const thread = threads[i];
+    const content = formatForTypefully(thread);
+    const scheduledDate = scheduleDateForPost(i);
+
+    const response = await fetch("https://api.typefully.com/v1/drafts/", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": `Bearer ${process.env.TYPEFULLY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content,
+        "schedule-date": scheduledDate,
+        threadify: false, // Content is already formatted as a thread
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Typefully API error (${response.status}): ${errorBody}`);
     }
 
-    // Verify the shared secret Kit sends as a query param or header
-    // Kit sends it as X-Kit-Signature or you can check a shared secret param
-    const url = new URL(request.url);
-    const secret = url.searchParams.get("secret");
-    if (secret !== env.WEBHOOK_SECRET) {
-      return new Response("Unauthorized", { status: 401 });
-    }
+    const result = await response.json();
+    console.log(`  ✓ Draft ${i + 1}/${threads.length} posted — angle: "${thread.angle}" → scheduled: ${scheduledDate}`);
+  }
 
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return new Response("Invalid JSON", { status: 400 });
-    }
+  console.log("🎉 All drafts pushed. Head to Typefully to review before they go live.");
+}
 
-    // Kit broadcast.sent webhook payload includes the broadcast object
-    const broadcastId = body?.broadcast?.id;
-    const subject = body?.broadcast?.subject ?? "unknown";
+// ─── Step 6: Archive the processed newsletter ──────────────────────────────
 
-    if (!broadcastId) {
-      return new Response("No broadcast ID in payload", { status: 400 });
-    }
+function archiveNewsletter(filePath, fileName) {
+  if (!fs.existsSync(PROCESSED_DIR)) {
+    fs.mkdirSync(PROCESSED_DIR, { recursive: true });
+  }
 
-    console.log(`Received Kit webhook for broadcast: "${subject}" (id: ${broadcastId})`);
+  const timestamp = new Date().toISOString().split("T")[0];
+  const dest = path.join(PROCESSED_DIR, `${timestamp}-${fileName}`);
+  fs.renameSync(filePath, dest);
+  console.log(`📁 Newsletter archived to ${dest}`);
+}
 
-    // Fire GitHub Actions repository_dispatch
-    const githubResponse = await fetch(
-      `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/vnd.github.v3+json",
-          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-          "Content-Type": "application/json",
-          "User-Agent": "kit-webhook-bridge",
-        },
-        body: JSON.stringify({
-          event_type: "newsletter_published",
-          client_payload: {
-            broadcast_id: broadcastId,
-            subject,
-          },
-        }),
-      }
-    );
+// ─── Main ──────────────────────────────────────────────────────────────────
 
-    if (!githubResponse.ok) {
-      const errorText = await githubResponse.text();
-      console.error(`GitHub dispatch failed: ${githubResponse.status} ${errorText}`);
-      return new Response("Failed to trigger GitHub Actions", { status: 500 });
-    }
+async function run() {
+  console.log("🚀 Newsletter pipeline starting...\n");
 
-    console.log(`✅ GitHub Actions triggered for broadcast: "${subject}"`);
-    return new Response("OK", { status: 200 });
-  },
-};
+  const newsletter = findNewsletter();
+  if (!newsletter) return;
+
+  const systemPrompt = loadSystemPrompt();
+  const threads = await generateThreads(newsletter.content, systemPrompt);
+
+  await pushToTypefully(threads);
+  archiveNewsletter(newsletter.filePath, newsletter.fileName);
+
+  console.log("\n✅ Pipeline complete.");
+}
+
+run().catch((err) => {
+  console.error("Pipeline failed:", err.message);
+  process.exit(1);
+});

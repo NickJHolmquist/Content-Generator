@@ -1,0 +1,26 @@
+{
+  "name": "content-generator",
+  "version": "1.0.0",
+  "description": "Publish your Kit newsletter → Claude generates thread drafts → Typefully queues them for review.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NickJHolmquist/Content-Generator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/NickJHolmquist/Content-Generator/issues"
+  },
+  "homepage": "https://github.com/NickJHolmquist/Content-Generator#readme",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "dotenv": "^17.3.1",
+    "html-to-text": "^9.0.5"
+  }
+}
