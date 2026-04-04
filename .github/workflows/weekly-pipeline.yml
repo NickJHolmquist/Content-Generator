@@ -1,15 +1,11 @@
 name: Newsletter Pipeline
 
 on:
-  # PRIMARY TRIGGER: fired by Kit webhook via the Cloudflare Worker bridge
-  # when you publish a broadcast in Kit
-  repository_dispatch:
-    types: [newsletter_published]
-
-  # FALLBACK: runs every Monday 9am UTC if the webhook somehow didn't fire
-  # Also useful while you're getting the webhook bridge set up
-  schedule:
-    - cron: "0 9 * * 1"
+  # PRIMARY TRIGGER: push a newsletter file to newsletter/inbox/
+  # to kick off the full pipeline automatically
+  push:
+    paths:
+      - 'newsletter/inbox/**'
 
   # Manual trigger from GitHub UI (handy for testing)
   workflow_dispatch:
@@ -31,16 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # ── Fetch newsletter from Kit API ─────────────────────────────────────
-      # Pulls your latest sent broadcast and writes it to newsletter/inbox/
-      # This replaces the manual file drop from the earlier version
-      - name: Fetch newsletter from Kit
-        run: node scripts/fetch-newsletter.js
-        env:
-          KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
-          NEWSLETTER_DIR: ./newsletter/inbox
-
       # ── Run the main pipeline ─────────────────────────────────────────────
+      # DRY_RUN=true means Claude generates content and logs it to the console
+      # but nothing gets sent to Typefully yet
       - name: Generate content and push to Typefully
         run: node index.js
         env:
@@ -50,10 +39,11 @@ jobs:
           PROCESSED_DIR: ./newsletter/processed
           THREADS_PER_NEWSLETTER: 5
           SCHEDULE_OFFSET_DAYS: 1
+          DRY_RUN: false
 
       # ── Archive the processed newsletter back to the repo ─────────────────
       - name: Commit archived newsletter
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: archive processed newsletter [skip ci]"
-          file_pattern: "newsletter/**"
+          file_pattern: "newsletter/processed/**"

@@ -34,10 +34,31 @@ function findNewsletter() {
   }
 
   const filePath = path.join(NEWSLETTER_DIR, files[0]);
-  const content = fs.readFileSync(filePath, "utf-8").trim();
-  console.log(`📬 Found newsletter: ${files[0]} (${content.length} chars)`);
+  const raw = fs.readFileSync(filePath, "utf-8").trim();
+  console.log(`📬 Found newsletter: ${files[0]} (${raw.length} chars)`);
+ 
+  // Parse optional frontmatter block:
+  // ---
+  // subject: Issue #42 — My newsletter title
+  // send_date: 2026-04-07 10:00
+  // ---
+  let subject = null;
+  let sendDate = null;
+  let content = raw;
+ 
+  const frontmatterMatch = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (frontmatterMatch) {
+    const meta = frontmatterMatch[1];
+    content = frontmatterMatch[2].trim();
+ 
+    const subjectMatch = meta.match(/^subject:\s*(.+)$/m);
+    const dateMatch = meta.match(/^send_date:\s*(.+)$/m);
+ 
+    if (subjectMatch) subject = subjectMatch[1].trim();
+    if (dateMatch) sendDate = dateMatch[1].trim();
+  }
 
-  return { filePath, fileName: files[0], content };
+  return { filePath, fileName: files[0], content, subject, sendDate };
 }
 
 // ─── Step 2: Load system prompt ────────────────────────────────────────────
@@ -66,7 +87,7 @@ Remember: return only the JSON array, nothing else.
 `.trim();
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-5",
+    model: "claude-sonnet-4-6",
     max_tokens: 2000,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
@@ -98,56 +119,65 @@ Remember: return only the JSON array, nothing else.
 // Docs: https://typefully.com/developer
 
 function formatForTypefully(thread) {
-  return thread.tweets.join("\n\n---\n\n");
+  return thread.tweets.map((text) => ({ text }));
 }
 
 function scheduleDateForPost(indexFromToday) {
-  // Spreads posts across the week starting SCHEDULE_OFFSET_DAYS from now
   const date = new Date();
   date.setDate(date.getDate() + SCHEDULE_OFFSET_DAYS + indexFromToday);
   date.setHours(9, 0, 0, 0); // 9am — adjust to your preferred send time
   return date.toISOString();
 }
 
-// ─── Step 5: Push drafts to Typefully ─────────────────────────────────────
-
 async function pushToTypefully(threads) {
   if (DRY_RUN) {
     console.log("\n🧪 DRY RUN — would have posted the following to Typefully:\n");
     threads.forEach((thread, i) => {
       console.log(`--- Thread ${i + 1}: ${thread.angle} ---`);
-      console.log(formatForTypefully(thread));
+      thread.tweets.forEach((tweet, t) => console.log(`  [${t + 1}] ${tweet}`));
       console.log();
     });
     return;
+  }
+
+  const socialSetId = process.env.TYPEFULLY_SOCIAL_SET_ID;
+  if (!socialSetId) {
+    throw new Error("TYPEFULLY_SOCIAL_SET_ID is not set. Find it in Typefully → Settings → API with Development mode enabled.");
   }
 
   console.log(`📤 Pushing ${threads.length} drafts to Typefully...`);
 
   for (let i = 0; i < threads.length; i++) {
     const thread = threads[i];
-    const content = formatForTypefully(thread);
+    const posts = formatForTypefully(thread);
     const scheduledDate = scheduleDateForPost(i);
 
-    const response = await fetch("https://api.typefully.com/v1/drafts/", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": `Bearer ${process.env.TYPEFULLY_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        content,
-        "schedule-date": scheduledDate,
-        threadify: false, // Content is already formatted as a thread
-      }),
-    });
+    const response = await fetch(
+      `https://api.typefully.com/v2/social-sets/${socialSetId}/drafts`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.TYPEFULLY_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          platforms: {
+            x: {
+              enabled: true,
+              posts,
+            },
+          },
+          publish_at: scheduledDate,
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorBody = await response.text();
       throw new Error(`Typefully API error (${response.status}): ${errorBody}`);
     }
 
-    const result = await response.json();
+    await response.json();
     console.log(`  ✓ Draft ${i + 1}/${threads.length} posted — angle: "${thread.angle}" → scheduled: ${scheduledDate}`);
   }
 
