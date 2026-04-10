@@ -6,10 +6,18 @@ import "dotenv/config";
 // ─── Config ────────────────────────────────────────────────────────────────
 
 const NEWSLETTER_DIR = process.env.NEWSLETTER_DIR ?? "./newsletter/inbox";
-const PROCESSED_DIR = process.env.PROCESSED_DIR ?? "./newsletter/processed";
-const THREADS_PER_NEWSLETTER = parseInt(process.env.THREADS_PER_NEWSLETTER ?? "5");
+const PROCESSED_DIR  = process.env.PROCESSED_DIR  ?? "./newsletter/processed";
+const DAYS                = 7;
 const SCHEDULE_OFFSET_DAYS = parseInt(process.env.SCHEDULE_OFFSET_DAYS ?? "1");
-const DRY_RUN = process.env.DRY_RUN === "true";
+const CTA_DELAY_HOURS     = 2;
+const CTA_TEXT            = process.env.CTA_TEXT ?? null;
+
+// Slot times — hour in 24h local time
+const SLOT_TIMES = {
+  good_morning: 7,   // 7am
+  thread:       9,   // 9am
+  experimental: 12,  // 12pm
+};
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -35,28 +43,31 @@ function findNewsletter() {
 
   const filePath = path.join(NEWSLETTER_DIR, files[0]);
   const raw = fs.readFileSync(filePath, "utf-8").trim();
-  console.log(`📬 Found newsletter: ${files[0]} (${raw.length} chars)`);
- 
-  // Parse optional frontmatter block:
+
+  // Parse optional frontmatter:
   // ---
-  // subject: Issue #42 — My newsletter title
+  // subject: Issue #42 — Title here
   // send_date: 2026-04-07 10:00
   // ---
   let subject = null;
   let sendDate = null;
   let content = raw;
- 
+
   const frontmatterMatch = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (frontmatterMatch) {
     const meta = frontmatterMatch[1];
     content = frontmatterMatch[2].trim();
- 
+
     const subjectMatch = meta.match(/^subject:\s*(.+)$/m);
-    const dateMatch = meta.match(/^send_date:\s*(.+)$/m);
- 
-    if (subjectMatch) subject = subjectMatch[1].trim();
-    if (dateMatch) sendDate = dateMatch[1].trim();
+    const dateMatch    = meta.match(/^send_date:\s*(.+)$/m);
+
+    if (subjectMatch) subject  = subjectMatch[1].trim();
+    if (dateMatch)    sendDate = dateMatch[1].trim();
   }
+
+  console.log(`📬 Found newsletter: ${files[0]} (${content.length} chars)`);
+  if (subject)  console.log(`   Subject: ${subject}`);
+  if (sendDate) console.log(`   Send date: ${sendDate}`);
 
   return { filePath, fileName: files[0], content, subject, sendDate };
 }
@@ -71,24 +82,31 @@ function loadSystemPrompt() {
   return fs.readFileSync(promptPath, "utf-8").trim();
 }
 
-// ─── Step 3: Generate threads via Claude API ───────────────────────────────
+// ─── Step 3: Generate all content via Claude API ───────────────────────────
 
-async function generateThreads(newsletterContent, systemPrompt) {
-  console.log(`🤖 Sending to Claude — generating ${THREADS_PER_NEWSLETTER} threads...`);
+async function generateContent(newsletterContent, systemPrompt) {
+  console.log(`🤖 Sending to Claude — generating ${DAYS} days of content...`);
 
   const userMessage = `
-Here is this week's newsletter. Please generate exactly ${THREADS_PER_NEWSLETTER} thread drafts from it.
+Here is this week's newsletter. Generate exactly ${DAYS} items for each slot:
+- ${DAYS} good_morning posts (single tweet, evergreen, speaks to dads)
+- ${DAYS} threads (derived from the newsletter, 4-6 posts each)
+- ${DAYS} experimental posts (single line, attention-grabbing idea)
 
+Rotate through different thread types and CORE content categories across the 7 threads.
+Each good morning post should carry a distinct belief or reframe.
+
+Newsletter:
 ---
 ${newsletterContent}
 ---
 
-Remember: return only the JSON array, nothing else.
+Return only the JSON object, nothing else.
 `.trim();
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    max_tokens: 8000,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
   });
@@ -98,90 +116,98 @@ Remember: return only the JSON array, nothing else.
     .map((block) => block.text)
     .join("");
 
-  // Strip any accidental markdown fences before parsing
   const cleaned = rawText.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
 
-  let threads;
+  let content;
   try {
-    threads = JSON.parse(cleaned);
+    content = JSON.parse(cleaned);
   } catch (err) {
     console.error("Failed to parse Claude response as JSON:", rawText);
     throw new Error("Claude returned malformed JSON. Check your system prompt.");
   }
 
-  console.log(`✅ Generated ${threads.length} thread drafts`);
-  return threads;
+  console.log(`✅ Generated content:`);
+  console.log(`   ${content.good_morning?.length  ?? 0} good morning posts`);
+  console.log(`   ${content.threads?.length        ?? 0} threads`);
+  console.log(`   ${content.experimental?.length   ?? 0} experimental posts`);
+  if (CTA_TEXT) console.log(`   CTA: "${CTA_TEXT.slice(0, 60)}..."`);
+  else          console.log(`   CTA: none (set CTA_TEXT in .env to enable)`);
+
+  return content;
 }
 
-// ─── Step 4: Format threads for Typefully ──────────────────────────────────
-//
-// Typefully expects thread tweets separated by "\n\n---\n\n"
-// Docs: https://typefully.com/developer
+// ─── Step 4: Build scheduled post list ─────────────────────────────────────
 
-function formatForTypefully(thread) {
-  return thread.tweets.map((text) => ({ text }));
-}
+function buildSchedule(content) {
+  const schedule = [];
 
-function scheduleDateForPost(indexFromToday) {
-  const date = new Date();
-  date.setDate(date.getDate() + SCHEDULE_OFFSET_DAYS + indexFromToday);
-  date.setHours(9, 0, 0, 0); // 9am — adjust to your preferred send time
-  return date.toISOString();
-}
+  for (let day = 0; day < DAYS; day++) {
+    const date = new Date();
+    date.setDate(date.getDate() + SCHEDULE_OFFSET_DAYS + day);
 
-async function pushToTypefully(threads) {
-  if (DRY_RUN) {
-    console.log("\n🧪 DRY RUN — would have posted the following to Typefully:\n");
-    threads.forEach((thread, i) => {
-      console.log(`--- Thread ${i + 1}: ${thread.angle} ---`);
-      thread.tweets.forEach((tweet, t) => console.log(`  [${t + 1}] ${tweet}`));
-      console.log();
-    });
-    return;
-  }
-
-  const socialSetId = process.env.TYPEFULLY_SOCIAL_SET_ID;
-  if (!socialSetId) {
-    throw new Error("TYPEFULLY_SOCIAL_SET_ID is not set. Find it in Typefully → Settings → API with Development mode enabled.");
-  }
-
-  console.log(`📤 Pushing ${threads.length} drafts to Typefully...`);
-
-  for (let i = 0; i < threads.length; i++) {
-    const thread = threads[i];
-    const posts = formatForTypefully(thread);
-    const scheduledDate = scheduleDateForPost(i);
-
-    const response = await fetch(
-      `https://api.typefully.com/v2/social-sets/${socialSetId}/drafts`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.TYPEFULLY_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          platforms: {
-            x: {
-              enabled: true,
-              posts,
-            },
-          },
-          publish_at: scheduledDate,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Typefully API error (${response.status}): ${errorBody}`);
+    // Good morning — 7am
+    if (content.good_morning?.[day]) {
+      const d = new Date(date);
+      d.setHours(SLOT_TIMES.good_morning, 0, 0, 0);
+      schedule.push({
+        type: "good_morning",
+        day: day + 1,
+        posts: [{ text: content.good_morning[day].tweet }],
+        publish_at: d.toISOString(),
+        label: content.good_morning[day].tweet.slice(0, 60) + "...",
+      });
     }
 
-    await response.json();
-    console.log(`  ✓ Draft ${i + 1}/${threads.length} posted — angle: "${thread.angle}" → scheduled: ${scheduledDate}`);
+    // Thread — 9am, with CTA reply scheduled 2hrs later
+    if (content.threads?.[day]) {
+      const d = new Date(date);
+      d.setHours(SLOT_TIMES.thread, 0, 0, 0);
+
+      const ctaTime = new Date(d);
+      ctaTime.setHours(ctaTime.getHours() + CTA_DELAY_HOURS);
+
+      const thread = content.threads[day];
+      schedule.push({
+        type: "thread",
+        day: day + 1,
+        posts: thread.posts.map((text) => ({ text })),
+        publish_at: d.toISOString(),
+        label: thread.angle,
+        cta: CTA_TEXT,
+        cta_publish_at: CTA_TEXT ? ctaTime.toISOString() : null,
+        threads_post_id: null,
+      });
+    }
+
+    // Experimental — 12pm
+    if (content.experimental?.[day]) {
+      const d = new Date(date);
+      d.setHours(SLOT_TIMES.experimental, 0, 0, 0);
+      schedule.push({
+        type: "experimental",
+        day: day + 1,
+        posts: [{ text: content.experimental[day].tweet }],
+        publish_at: d.toISOString(),
+        label: content.experimental[day].tweet.slice(0, 60) + "...",
+      });
+    }
   }
 
-  console.log("🎉 All drafts pushed. Head to Typefully to review before they go live.");
+  return schedule;
+}
+
+// ─── Step 5: Save draft to file ────────────────────────────────────────────
+
+function saveDraft(schedule) {
+  const draftsDir = "./drafts";
+  if (!fs.existsSync(draftsDir)) {
+    fs.mkdirSync(draftsDir, { recursive: true });
+  }
+
+  const outputPath = path.join(draftsDir, "draft.json");
+  fs.writeFileSync(outputPath, JSON.stringify(schedule, null, 2), "utf-8");
+  console.log(`\n📝 Draft saved to ${outputPath}`);
+  console.log(`   Review and edit the file, then run: npm run publish\n`);
 }
 
 // ─── Step 6: Archive the processed newsletter ──────────────────────────────
@@ -206,12 +232,13 @@ async function run() {
   if (!newsletter) return;
 
   const systemPrompt = loadSystemPrompt();
-  const threads = await generateThreads(newsletter.content, systemPrompt);
+  const content      = await generateContent(newsletter.content, systemPrompt);
+  const schedule     = buildSchedule(content);
 
-  await pushToTypefully(threads);
+  saveDraft(schedule);
   archiveNewsletter(newsletter.filePath, newsletter.fileName);
 
-  console.log("\n✅ Pipeline complete.");
+  console.log("✅ Generation complete.");
 }
 
 run().catch((err) => {
