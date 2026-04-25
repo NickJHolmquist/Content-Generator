@@ -60,7 +60,6 @@ async function pushToTypefully(schedule) {
         },
         body: JSON.stringify({
           platforms: {
-            x:        { enabled: true, posts: resolvePosts(item) },
             threads:  { enabled: true, posts: resolvePosts(item) },
             linkedin: { enabled: true, posts: resolveLinkedInPosts(item) },
             bluesky:  { enabled: true, posts: resolvePosts(item) },

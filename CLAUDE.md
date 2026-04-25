@@ -62,9 +62,21 @@ newsletter/inbox/{file}.txt
         ↓ npm run generate
 drafts/draft.json  (edit edited_posts here, empty string = use original)
         ↓ npm run publish [optional: start-day]
-Typefully → X, Threads, LinkedIn, Bluesky
+Typefully → Threads, LinkedIn, Bluesky
         ↓ (after CTA deploy) automatic cron reply on Threads
 ```
+
+## Git Workflow — Required for All Changes
+
+**Never push to main directly.** All changes must go through a branch and PR.
+
+1. Identify the relevant GitHub issue before starting any work
+2. If no issue exists and the user assigned the task directly, create the issue first — then branch from it
+3. If no issue exists and the task was not directly assigned, stop and ask before proceeding
+4. Check out a new branch: `issue/{number}-short-description` (e.g. `issue/2-deploy-cta-reply`)
+5. Make changes on that branch only
+6. Open a PR — do not merge it yourself
+7. The user reviews and merges
 
 ## Voice & Game Context
 

@@ -162,10 +162,9 @@ async function pushToTypefully(threads) {
         },
         body: JSON.stringify({
           platforms: {
-            x: {
-              enabled: true,
-              posts,
-            },
+            threads: { enabled: true, posts },
+            linkedin: { enabled: true, posts },
+            bluesky: { enabled: true, posts },
           },
           publish_at: scheduledDate,
         }),
