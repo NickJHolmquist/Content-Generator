@@ -1,0 +1,49 @@
+name: Newsletter Pipeline
+
+on:
+  # PRIMARY TRIGGER: push a newsletter file to newsletter/inbox/
+  # to kick off the full pipeline automatically
+  push:
+    paths:
+      - 'newsletter/inbox/**'
+
+  # Manual trigger from GitHub UI — useful for re-running or testing
+  workflow_dispatch:
+
+jobs:
+  generate-content:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install
+
+      # ── Run the main pipeline ─────────────────────────────────────────────
+      # DRY_RUN=true means Claude generates content and logs it to the console
+      # but nothing gets sent to Typefully yet — perfect for testing
+      - name: Generate content (console output only)
+        run: node index.js
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NEWSLETTER_DIR: ./newsletter/inbox
+          PROCESSED_DIR: ./newsletter/processed
+          THREADS_PER_NEWSLETTER: 5
+          DRY_RUN: true
+
+      # ── Archive the processed newsletter back to the repo ─────────────────
+      # Moves the file from inbox/ to processed/ so the next push
+      # doesn't re-trigger the pipeline on the same newsletter
+      - name: Commit archived newsletter
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: archive processed newsletter [skip ci]"
+          file_pattern: "newsletter/processed/**"
