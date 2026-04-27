@@ -12,11 +12,11 @@ const SCHEDULE_OFFSET_DAYS = parseInt(process.env.SCHEDULE_OFFSET_DAYS ?? "1");
 const CTA_DELAY_HOURS     = 2;
 const CTA_TEXT            = process.env.CTA_TEXT ?? null;
 
-// Slot times — hour in 24h local time
+// Slot times — 24h local time with natural minute offsets
 const SLOT_TIMES = {
-  good_morning: 7,   // 7am
-  thread:       9,   // 9am
-  experimental: 12,  // 12pm
+  good_morning: { hour: 7,  minute: 7  },
+  thread:       { hour: 9,  minute: 13 },
+  experimental: { hour: 12, minute: 4  },
 };
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -145,10 +145,10 @@ function buildSchedule(content) {
     const date = new Date();
     date.setDate(date.getDate() + SCHEDULE_OFFSET_DAYS + day);
 
-    // Good morning — 7am
+    // Good morning — 7:07am
     if (content.good_morning?.[day]) {
       const d = new Date(date);
-      d.setHours(SLOT_TIMES.good_morning, 0, 0, 0);
+      d.setHours(SLOT_TIMES.good_morning.hour, SLOT_TIMES.good_morning.minute, 0, 0);
       schedule.push({
         type: "good_morning",
         day: day + 1,
@@ -158,10 +158,10 @@ function buildSchedule(content) {
       });
     }
 
-    // Thread — 9am, with CTA reply scheduled 2hrs later
+    // Thread — 9:13am, with CTA reply scheduled 2hrs later
     if (content.threads?.[day]) {
       const d = new Date(date);
-      d.setHours(SLOT_TIMES.thread, 0, 0, 0);
+      d.setHours(SLOT_TIMES.thread.hour, SLOT_TIMES.thread.minute, 0, 0);
 
       const ctaTime = new Date(d);
       ctaTime.setHours(ctaTime.getHours() + CTA_DELAY_HOURS);
@@ -179,10 +179,10 @@ function buildSchedule(content) {
       });
     }
 
-    // Experimental — 12pm
+    // Experimental — 12:04pm
     if (content.experimental?.[day]) {
       const d = new Date(date);
-      d.setHours(SLOT_TIMES.experimental, 0, 0, 0);
+      d.setHours(SLOT_TIMES.experimental.hour, SLOT_TIMES.experimental.minute, 0, 0);
       schedule.push({
         type: "experimental",
         day: day + 1,
@@ -198,13 +198,14 @@ function buildSchedule(content) {
 
 // ─── Step 5: Save draft to file ────────────────────────────────────────────
 
-function saveDraft(schedule) {
+function saveDraft(schedule, newsletterFileName) {
   const draftsDir = "./drafts";
   if (!fs.existsSync(draftsDir)) {
     fs.mkdirSync(draftsDir, { recursive: true });
   }
 
-  const outputPath = path.join(draftsDir, "draft.json");
+  const slug = path.basename(newsletterFileName, path.extname(newsletterFileName));
+  const outputPath = path.join(draftsDir, `${slug}_drafts.json`);
   fs.writeFileSync(outputPath, JSON.stringify(schedule, null, 2), "utf-8");
   console.log(`\n📝 Draft saved to ${outputPath}`);
   console.log(`   Review and edit the file, then run: npm run publish\n`);
@@ -235,7 +236,7 @@ async function run() {
   const content      = await generateContent(newsletter.content, systemPrompt);
   const schedule     = buildSchedule(content);
 
-  saveDraft(schedule);
+  saveDraft(schedule, newsletter.fileName);
   archiveNewsletter(newsletter.filePath, newsletter.fileName);
 
   console.log("✅ Generation complete.");

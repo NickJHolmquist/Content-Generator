@@ -379,6 +379,41 @@
   .stat-num { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 700; color: var(--accent); }
   .stat-label { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
 
+  .add-post-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .add-post-row:last-child { border-bottom: none; }
+  .add-post-divider { flex: 1; height: 1px; background: var(--border); }
+  .add-post-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    border: 1px dashed var(--border2);
+    background: transparent;
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+    letter-spacing: 0.06em;
+    transition: all 0.15s;
+  }
+  .add-post-btn:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }
+  .new-post-label { color: var(--tag-experimental); font-style: italic; font-size: 11px; }
+  .delete-post-btn {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    opacity: 0.5;
+    color: var(--red);
+    border-color: var(--red);
+  }
+  .delete-post-btn:hover { opacity: 1; background: #2a1010; }
+
   @media (max-width: 640px) {
     .post-row { grid-template-columns: 1fr; }
     .post-side + .post-side { border-left: none; border-top: 1px solid var(--border); }
@@ -529,23 +564,35 @@ function renderCurrent() {
   let rowsHTML = item.posts.map((post, pi) => {
     const edited = item.edited_posts[pi]?.text || '';
     const isThread = item.posts.length > 1;
+    const isNew = post._new === true;
+    const originalSide = isNew
+      ? `<div class="side-label new-post-label">↳ New post</div><div class="original-text" style="color:var(--text-dim);font-style:italic">No original — write your new post on the right.</div>`
+      : `${isThread ? `<div class="thread-num">Post ${pi + 1} of ${item.posts.length}</div>` : ''}
+         <div class="side-label">Original</div>
+         <div class="original-text">${escapeHtml(post.text)}</div>`;
     return `
-      <div class="post-row">
+      <div class="post-row" id="row_${pi}">
         <div class="post-side">
-          ${isThread ? `<div class="thread-num">Post ${pi + 1} of ${item.posts.length}</div>` : ''}
-          <div class="side-label">Original</div>
-          <div class="original-text">${escapeHtml(post.text)}</div>
+          ${originalSide}
         </div>
         <div class="post-side">
-          ${isThread ? `<div class="thread-num" style="opacity:0">&nbsp;</div>` : ''}
+          ${!isNew && isThread ? `<div class="thread-num" style="opacity:0">&nbsp;</div>` : ''}
           <div class="side-label" style="display:flex;justify-content:space-between;align-items:center;">
             <span>Edited version</span>
-            <button onclick="copyOriginal(${pi})" style="font-size:10px;padding:2px 8px;border-radius:3px;opacity:0.6;" title="Copy original into edit field">Copy original</button>
+            <div style="display:flex;gap:6px;">
+              ${!isNew ? `<button onclick="copyOriginal(${pi})" style="font-size:10px;padding:2px 8px;border-radius:3px;opacity:0.6;" title="Copy original into edit field">Copy original</button>` : ''}
+              ${isNew ? `<button class="delete-post-btn" onclick="deletePost(${pi})" title="Remove this post">✕ Remove</button>` : ''}
+            </div>
           </div>
-          <textarea class="edit-area" id="edit_${pi}" placeholder="Leave blank to publish original as-is..." oninput="updateCharCount(this, ${pi})">${escapeHtml(edited)}</textarea>
+          <textarea class="edit-area" id="edit_${pi}" placeholder="${isNew ? 'Write your new post here...' : 'Leave blank to publish original as-is...'}" oninput="updateCharCount(this, ${pi})">${escapeHtml(edited)}</textarea>
           <div class="char-count" id="count_${pi}">${edited.length} chars</div>
         </div>
-      </div>`;
+      </div>
+      <div class="add-post-row">
+        <div class="add-post-divider"></div>
+        <button class="add-post-btn" onclick="addPostBelow(${pi})">+ add post below</button>
+        <div class="add-post-divider"></div>
+      </div>`; 
   }).join('');
 
   const isReady = item.schedule_ready;
@@ -667,6 +714,30 @@ function resetEditor() {
   document.getElementById('exportBtn').style.display = 'none';
   document.getElementById('jsonInput').value = '';
   document.getElementById('loadError').textContent = '';
+}
+
+function addPostBelow(pi) {
+  saveCurrentEdits();
+  const dataIdx = filtered[currentIndex];
+  const item = data[dataIdx];
+  item.posts.splice(pi + 1, 0, { text: '', _new: true });
+  item.edited_posts.splice(pi + 1, 0, { text: '' });
+  renderCurrent();
+  // focus the new textarea after render
+  setTimeout(() => {
+    const el = document.getElementById('edit_' + (pi + 1));
+    if (el) el.focus();
+  }, 50);
+}
+
+function deletePost(pi) {
+  saveCurrentEdits();
+  const dataIdx = filtered[currentIndex];
+  const item = data[dataIdx];
+  if (item.posts.length <= 1) return; // never delete the last post
+  item.posts.splice(pi, 1);
+  item.edited_posts.splice(pi, 1);
+  renderCurrent();
 }
 
 function copyOriginal(pi) {
