@@ -1,9 +1,30 @@
 import fs from "fs";
+import path from "path";
 import "dotenv/config";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
-const DRAFT_PATH = "./drafts/draft.json";
+function findDraftPath() {
+  const draftsDir = "./drafts";
+  const files = fs.readdirSync(draftsDir).filter((f) => f.endsWith("_drafts.json"));
+  if (files.length === 0) throw new Error("No draft file found in ./drafts/. Run npm run generate first.");
+  if (files.length > 1) console.warn(`Multiple drafts found — using: ${files[0]}`);
+  return path.join(draftsDir, files[0]);
+}
+
+function archiveDraft(draftPath) {
+  const pastDir = "./drafts/past";
+  if (!fs.existsSync(pastDir)) fs.mkdirSync(pastDir, { recursive: true });
+  const dest = path.join(pastDir, path.basename(draftPath).replace("_drafts.json", "_published.json"));
+  fs.renameSync(draftPath, dest);
+  console.log(`📁 Draft archived to ${dest}`);
+}
+
+const SLOT_TIMES = {
+  good_morning: { hour: 7,  minute: 7  },
+  thread:       { hour: 9,  minute: 13 },
+  experimental: { hour: 12, minute: 4  },
+};
 
 // ─── Merge edited_posts with posts fallback ────────────────────────────────
 
@@ -84,15 +105,59 @@ async function pushToTypefully(schedule) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
+const REDATE_START_DELAY_MINUTES = 15;
+const REDATE_TODAY_INTERVAL_MINUTES = 120;
+
+const SLOT_ORDER = { good_morning: 0, thread: 1, experimental: 2 };
+
+function redateSchedule(schedule) {
+  const now = new Date();
+  const days = [...new Set(schedule.map((i) => i.day))].sort((a, b) => a - b);
+  const redated = [];
+
+  days.forEach((day, index) => {
+    const dayItems = schedule
+      .filter((i) => i.day === day)
+      .sort((a, b) => (SLOT_ORDER[a.type] ?? 99) - (SLOT_ORDER[b.type] ?? 99));
+
+    if (index === 0) {
+      // Today: start now + 15 min, space posts 30 min apart
+      dayItems.forEach((item, i) => {
+        const d = new Date(now.getTime() + (REDATE_START_DELAY_MINUTES + i * REDATE_TODAY_INTERVAL_MINUTES) * 60 * 1000);
+        console.log(`  📅 Today Day ${item.day} [${item.type}] → ${d.toLocaleTimeString()}`);
+        redated.push({ ...item, publish_at: d.toISOString() });
+      });
+    } else {
+      // Future days: use normal slot times
+      const date = new Date();
+      date.setDate(now.getDate() + index);
+
+      dayItems.forEach((item) => {
+        const slot = SLOT_TIMES[item.type];
+        if (!slot) return;
+        const d = new Date(date);
+        d.setHours(slot.hour, slot.minute, 0, 0);
+        redated.push({ ...item, publish_at: d.toISOString() });
+      });
+    }
+  });
+
+  return redated;
+}
+
 async function run() {
-  if (!fs.existsSync(DRAFT_PATH)) {
-    throw new Error(`No draft found at ${DRAFT_PATH}. Run npm run generate first.`);
-  }
+  const draftPath = findDraftPath();
+  let schedule = JSON.parse(fs.readFileSync(draftPath, "utf-8"));
 
-  let schedule = JSON.parse(fs.readFileSync(DRAFT_PATH, "utf-8"));
+  const args = process.argv.slice(2);
+  const redate = args.includes("--redate");
+  const fromDay = args.find((a) => /^\d+$/.test(a)) ? parseInt(args.find((a) => /^\d+$/.test(a)), 10) : null;
 
-  const fromDay = process.argv[2] ? parseInt(process.argv[2], 10) : null;
-  if (fromDay) {
+  if (redate) {
+    console.log(`📅 Redating schedule from today...\n`);
+    schedule = redateSchedule(schedule);
+    console.log(`\n📂 ${schedule.length} posts scheduled after redating\n`);
+  } else if (fromDay) {
     schedule = schedule.filter((item) => item.day >= fromDay);
     console.log(`⏩ Resuming from day ${fromDay} (${schedule.length} posts remaining)\n`);
   } else {
@@ -100,6 +165,7 @@ async function run() {
   }
 
   await pushToTypefully(schedule);
+  archiveDraft(draftPath);
 }
 
 run().catch((err) => {
