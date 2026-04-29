@@ -9,8 +9,7 @@ const NEWSLETTER_DIR = process.env.NEWSLETTER_DIR ?? "./newsletter/inbox";
 const PROCESSED_DIR  = process.env.PROCESSED_DIR  ?? "./newsletter/processed";
 const DAYS                = 7;
 const SCHEDULE_OFFSET_DAYS = parseInt(process.env.SCHEDULE_OFFSET_DAYS ?? "1");
-const CTA_DELAY_HOURS     = 2;
-const CTA_TEXT            = process.env.CTA_TEXT ?? null;
+const CTA_DELAY_HOURS     = 2; // kept for logging reference only
 
 // Slot times — 24h local time with natural minute offsets
 const SLOT_TIMES = {
@@ -130,8 +129,7 @@ Return only the JSON object, nothing else.
   console.log(`   ${content.good_morning?.length  ?? 0} good morning posts`);
   console.log(`   ${content.threads?.length        ?? 0} threads`);
   console.log(`   ${content.experimental?.length   ?? 0} experimental posts`);
-  if (CTA_TEXT) console.log(`   CTA: "${CTA_TEXT.slice(0, 60)}..."`);
-  else          console.log(`   CTA: none (set CTA_TEXT in .env to enable)`);
+  console.log(`   CTA reply fires ${CTA_DELAY_HOURS}h after each thread (set CTA_TEXT env var to enable)`);
 
   return content;
 }
@@ -163,9 +161,6 @@ function buildSchedule(content) {
       const d = new Date(date);
       d.setHours(SLOT_TIMES.thread.hour, SLOT_TIMES.thread.minute, 0, 0);
 
-      const ctaTime = new Date(d);
-      ctaTime.setHours(ctaTime.getHours() + CTA_DELAY_HOURS);
-
       const thread = content.threads[day];
       schedule.push({
         type: "thread",
@@ -173,8 +168,6 @@ function buildSchedule(content) {
         posts: thread.posts.map((text) => ({ text })),
         publish_at: d.toISOString(),
         label: thread.angle,
-        cta: CTA_TEXT,
-        cta_publish_at: CTA_TEXT ? ctaTime.toISOString() : null,
         threads_post_id: null,
       });
     }

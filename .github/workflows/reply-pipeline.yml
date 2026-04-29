@@ -34,6 +34,7 @@ jobs:
         run: node reply.js
         env:
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          CTA_TEXT: ${{ vars.CTA_TEXT }}
 
       # Saves the updated draft.json (with threads_post_id populated)
       # back to the repo so we don't reply twice
