@@ -89,7 +89,7 @@ async function generateContent(newsletterContent, systemPrompt) {
   const userMessage = `
 Here is this week's newsletter. Generate exactly ${DAYS} items for each slot:
 - ${DAYS} good_morning posts (single tweet, evergreen, speaks to dads)
-- ${DAYS} threads (derived from the newsletter, 4-6 posts each)
+- ${DAYS} threads (derived from the newsletter, 4-6 content posts each plus 1 CTA post appended at the end per the system prompt instructions)
 - ${DAYS} experimental posts (single line, attention-grabbing idea)
 
 Rotate through different thread types and CORE content categories across the 7 threads.

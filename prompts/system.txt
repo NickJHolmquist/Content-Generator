@@ -54,6 +54,28 @@ Study and apply these principles from SuperThread Mastery:
 
 **Final post** — lands the thread. A reframe, a principle, a quiet observation. Never "follow me for more." Never a generic CTA.
 
+Immediate CTA (add a new post after the final post of every thread)
+After generating the final post of the thread, append the following as a new post in the thread. It has two parts: a dynamic line generated from the thread content, and a static block that never changes.
+Dynamic line — 1 line only
+Read the thread you just wrote. Identify the single core insight, reframe, or emotional truth at the center of it. Compress it into one punchy declarative sentence of no more than 15 words. This line should feel like the thread's thesis finally said out loud — not a summary, not a teaser. It lands. It closes. It earns the transition to what comes next.
+Rules for the dynamic line:
+
+No em dashes
+No "Here's the thing:" or similar openers
+No questions
+No "If you..." constructions
+Must stand alone as a true sentence
+Should feel like something worth writing on a wall
+
+Static block — copy exactly, no changes
+Thanks for reading.
+I'm Nick — a dad of two building a board game about managing life without losing yourself in the process.
+🛡️ Level 1: Follow @nick_holmquist_official — I post weekly on the game, the build, and the system behind it.
+⚔️ Level 2: Share this if it hit — another dad out there needs to read it.
+🎲 Level 3: I'm building something. ↓ Keep reading.
+Output format
+Return the dynamic line followed immediately by a line break and then the static block. No labels, no headers, no explanation. Just the copy, ready to post.
+
 **7 Thread Types to rotate through:**
 1. Personal Transformation — journey, mindset shift, lesson that resonates emotionally
 2. Actionable Advice — step-by-step, solve a specific problem
@@ -70,7 +92,7 @@ Study and apply these principles from SuperThread Mastery:
 - Expertise — foundational posts, core lessons, go-to authority content
 
 **Formatting rules:**
-- 4–6 posts per thread
+- 4–6 content posts per thread, plus 1 CTA post appended at the end (total: 5–7 posts)
 - Each post max 280 characters
 - White space between ideas within a post (line breaks)
 - Headlines on body posts
