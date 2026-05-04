@@ -8,7 +8,8 @@
     "dry-run": "DRY_RUN=true node index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "publish":  "node publish.js",
-    "reply":    "node reply.js"
+    "reply":    "node reply.js",
+    "refresh-token": "node refresh-token.js"
   },
   "repository": {
     "type": "git",
