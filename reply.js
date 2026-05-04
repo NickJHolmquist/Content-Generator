@@ -2,9 +2,6 @@ import "dotenv/config";
 
 const THREADS_API_BASE = "https://graph.threads.net/v1.0";
 
-// Thread goes out at 9:13 AM PST = 17:13 UTC. Update if publish schedule changes.
-const THREAD_SLOT_UTC  = { hour: 17, minute: 13 };
-const MATCH_WINDOW_MS  = 30 * 60 * 1000; // ±30 min to find today's thread post
 const CHAIN_WINDOW_MS  = 10 * 60 * 1000; // replies within 10 min are part of the thread chain
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -47,18 +44,11 @@ async function threadsPost(endpoint, body = {}) {
   return res.json();
 }
 
-// ─── Find today's thread root post ────────────────────────────────────────
+// ─── Find the most recent thread root post ────────────────────────────────
+// Fetches the last 25 posts and returns the most recent one that has at least
+// one reply within CHAIN_WINDOW_MS — i.e. the most recent thread.
 
-async function findTodaysThreadPost() {
-  const now = new Date();
-  const target = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    THREAD_SLOT_UTC.hour,
-    THREAD_SLOT_UTC.minute
-  ));
-
+async function findMostRecentThreadPost() {
   const data = await threadsGet("/me/threads", {
     fields: "id,timestamp,text",
     limit: "25",
@@ -69,10 +59,24 @@ async function findTodaysThreadPost() {
     return null;
   }
 
-  return data.data.find((post) => {
-    const diff = Math.abs(new Date(post.timestamp).getTime() - target.getTime());
-    return diff <= MATCH_WINDOW_MS;
-  }) ?? null;
+  for (const post of data.data) {
+    const replies = await threadsGet(`/${post.id}/replies`, {
+      fields: "id,timestamp",
+      limit: "5",
+    });
+
+    if (!replies.data?.length) continue;
+
+    const postTime = new Date(post.timestamp).getTime();
+    const hasChain = replies.data.some((r) => {
+      const diff = new Date(r.timestamp).getTime() - postTime;
+      return diff > 0 && diff <= CHAIN_WINDOW_MS;
+    });
+
+    if (hasChain) return post;
+  }
+
+  return null;
 }
 
 // ─── Walk the reply chain to the last post in the thread ──────────────────
@@ -145,7 +149,7 @@ async function run() {
 
   if (DRY_RUN) console.log("--- DRY RUN — no replies will be posted ---\n");
 
-  const rootPost = await findTodaysThreadPost();
+  const rootPost = await findMostRecentThreadPost();
   if (!rootPost) {
     console.log("No thread post found for today's slot. Nothing to do.");
     return;
