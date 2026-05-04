@@ -8,7 +8,7 @@ on:
   #   EST (UTC-5): 11am EST = 16:00 UTC → cron "0 16 * * *"
   #   EDT (UTC-4): 11am EDT = 15:00 UTC → cron "0 15 * * *"
   schedule:
-    - cron: "0 18 * * *"
+    - cron: "0 19 * * *"
 
   # Manual trigger for testing
   workflow_dispatch:

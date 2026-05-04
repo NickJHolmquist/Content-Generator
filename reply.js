@@ -2,8 +2,8 @@ import "dotenv/config";
 
 const THREADS_API_BASE = "https://graph.threads.net/v1.0";
 
-// Thread goes out at 9:13 AM PDT = 16:13 UTC. Update if publish schedule changes.
-const THREAD_SLOT_UTC  = { hour: 16, minute: 13 };
+// Thread goes out at 9:13 AM PST = 17:13 UTC. Update if publish schedule changes.
+const THREAD_SLOT_UTC  = { hour: 17, minute: 13 };
 const MATCH_WINDOW_MS  = 30 * 60 * 1000; // ±30 min to find today's thread post
 const CHAIN_WINDOW_MS  = 10 * 60 * 1000; // replies within 10 min are part of the thread chain
 
