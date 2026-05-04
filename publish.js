@@ -151,6 +151,7 @@ async function run() {
 
   const args = process.argv.slice(2);
   const redate = args.includes("--redate");
+  const onlyReady = args.includes("--only-ready");
   const fromDay = args.find((a) => /^\d+$/.test(a)) ? parseInt(args.find((a) => /^\d+$/.test(a)), 10) : null;
 
   if (redate) {
@@ -162,6 +163,11 @@ async function run() {
     console.log(`⏩ Resuming from day ${fromDay} (${schedule.length} posts remaining)\n`);
   } else {
     console.log(`📂 Loaded draft with ${schedule.length} posts\n`);
+  }
+
+  if (onlyReady) {
+    schedule = schedule.filter((item) => item.schedule_ready === true);
+    console.log(`⏩ --only-ready: ${schedule.length} posts marked ready\n`);
   }
 
   await pushToTypefully(schedule);
