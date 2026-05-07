@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quest Content Editor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;600;700&family=Inter:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #222;
+    --border: #2a2a2a;
+    --border2: #333;
+    --text: #e8e8e8;
+    --text-muted: #888;
+    --text-dim: #555;
+    --accent: #c8a96e;
+    --accent-dim: #3a2e1a;
+    --green: #4caf7d;
+    --green-dim: #1a2e22;
+    --red: #e05c5c;
+    --blue: #5b9bd5;
+    --tag-morning: #c8a96e;
+    --tag-thread: #5b9bd5;
+    --tag-experimental: #9b7fd4;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  .logo span { color: var(--text-muted); font-weight: 400; }
+
+  .progress-bar-wrap {
+    flex: 1;
+    max-width: 200px;
+    margin: 0 24px;
+  }
+
+  .progress-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .progress-label span { white-space: nowrap; }
+  .progress-sep { color: var(--border2); }
+
+  .progress-bar {
+    height: 3px;
+    background: var(--border2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+
+  button {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    letter-spacing: 0.02em;
+  }
+
+  button:hover { border-color: var(--text-muted); color: var(--text); background: var(--surface); }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  button.primary:hover { background: var(--accent-dim); }
+  button.success { border-color: var(--green); color: var(--green); }
+  button.success:hover { background: var(--green-dim); }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .load-screen {
+    max-width: 600px;
+    margin: 80px auto;
+    padding: 0 24px;
+  }
+
+  .load-screen h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+
+  .load-screen p { color: var(--text-muted); margin-bottom: 20px; }
+
+  textarea.json-input {
+    width: 100%;
+    height: 200px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 14px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  textarea.json-input:focus { border-color: var(--accent); }
+
+  .load-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+
+  .error-msg { color: var(--red); font-size: 12px; font-family: 'IBM Plex Mono', monospace; }
+
+  .editor-layout {
+    display: none;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .editor-layout.active { display: block; }
+
+  .filter-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+
+  .filter-label { color: var(--text-dim); font-size: 11px; font-family: 'IBM Plex Mono', monospace; margin-right: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .filter-btn {
+    padding: 4px 12px;
+    font-size: 11px;
+    border-radius: 20px;
+    border: 1px solid var(--border2);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+  }
+
+  .filter-btn:hover { border-color: var(--text-muted); color: var(--text); background: var(--surface); }
+  .filter-btn.active { background: var(--surface2); color: var(--text); border-color: var(--text-muted); }
+  .filter-btn[data-type="good_morning"].active { border-color: var(--tag-morning); color: var(--tag-morning); }
+  .filter-btn[data-type="thread"].active { border-color: var(--tag-thread); color: var(--tag-thread); }
+  .filter-btn[data-type="experimental"].active { border-color: var(--tag-experimental); color: var(--tag-experimental); }
+
+  .post-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .card-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface2);
+  }
+
+  .type-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .badge-good_morning { background: #2a2010; color: var(--tag-morning); border: 1px solid #3a2e18; }
+  .badge-thread { background: #0d1e30; color: var(--tag-thread); border: 1px solid #1a3050; }
+  .badge-experimental { background: #1c152a; color: var(--tag-experimental); border: 1px solid #2e1f44; }
+
+  .card-meta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+
+  .ready-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .ready-toggle:hover { border-color: var(--border2); background: var(--bg); }
+  .ready-toggle input[type="checkbox"] { display: none; }
+  .toggle-dot {
+    width: 28px;
+    height: 16px;
+    background: var(--border2);
+    border-radius: 8px;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-dot::after {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    transition: all 0.2s;
+  }
+
+  .ready-toggle.checked .toggle-dot { background: var(--green-dim); border: 1px solid var(--green); }
+  .ready-toggle.checked .toggle-dot::after { background: var(--green); transform: translateX(12px); }
+  .toggle-label { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+  .ready-toggle.checked .toggle-label { color: var(--green); }
+
+  .post-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .post-row:last-child { border-bottom: none; }
+
+  .post-side {
+    padding: 16px 18px;
+  }
+
+  .post-side + .post-side {
+    border-left: 1px solid var(--border);
+  }
+
+  .side-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+
+  .original-text {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+  }
+
+  .thread-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--tag-thread);
+    margin-bottom: 6px;
+    opacity: 0.7;
+  }
+
+  textarea.edit-area-old-removed {
+    display: none;
+  }
+
+  textarea.edit-area {
+    width: 100%;
+    min-height: 80px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    line-height: 1.65;
+    padding: 10px 12px;
+    resize: none;
+    overflow: hidden;
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+  }
+  textarea.edit-area:focus { border-color: var(--accent); }
+  textarea.edit-area::placeholder { color: var(--text-dim); font-style: italic; }
+  textarea.edit-area::placeholder { color: var(--text-dim); font-style: italic; }
+
+  .char-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: right;
+    margin-top: 4px;
+  }
+
+  .char-count.warn { color: #c8a040; }
+  .char-count.over { color: var(--red); }
+
+  .nav-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .nav-info { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-dim); }
+
+  .nav-actions { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+
+  .nav-ready-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .nav-ready-toggle:hover { border-color: var(--text-muted); }
+  .nav-ready-toggle input[type="checkbox"] { display: none; }
+  .nav-ready-toggle .toggle-dot {
+    width: 28px; height: 16px;
+    background: var(--border2);
+    border-radius: 8px;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .nav-ready-toggle .toggle-dot::after {
+    content: '';
+    width: 10px; height: 10px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    position: absolute;
+    top: 3px; left: 3px;
+    transition: all 0.2s;
+  }
+  .nav-ready-toggle.checked .toggle-dot { background: var(--green-dim); border: 1px solid var(--green); }
+  .nav-ready-toggle.checked .toggle-dot::after { background: var(--green); transform: translateX(12px); }
+  .nav-ready-toggle .toggle-label { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+  .nav-ready-toggle.checked .toggle-label { color: var(--green); }
+
+  textarea.edit-area {
+    width: 100%;
+    min-height: 80px;
+    overflow: hidden;
+    resize: none;
+  }
+
+  .complete-screen {
+    text-align: center;
+    padding: 80px 24px;
+    display: none;
+  }
+
+  .complete-screen.active { display: block; }
+  .complete-screen h2 { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 700; color: var(--green); margin-bottom: 12px; }
+  .complete-screen p { color: var(--text-muted); margin-bottom: 28px; }
+
+  .stats-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 24px;
+    text-align: center;
+  }
+
+  .stat-num { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+
+  .add-post-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .add-post-row:last-child { border-bottom: none; }
+  .add-post-divider { flex: 1; height: 1px; background: var(--border); }
+  .add-post-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    border: 1px dashed var(--border2);
+    background: transparent;
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+    letter-spacing: 0.06em;
+    transition: all 0.15s;
+  }
+  .add-post-btn:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }
+  .new-post-label { color: var(--tag-experimental); font-style: italic; font-size: 11px; }
+  .delete-post-btn {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    opacity: 0.5;
+    color: var(--red);
+    border-color: var(--red);
+  }
+  .delete-post-btn:hover { opacity: 1; background: #2a1010; }
+
+  @media (max-width: 640px) {
+    .post-row { grid-template-columns: 1fr; }
+    .post-side + .post-side { border-left: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Quest <span>/ Content Editor</span></div>
+  <div class="progress-bar-wrap" id="progressWrap" style="display:none">
+    <div class="progress-label">
+      <span id="progressText">0 / 0</span>
+      <span class="progress-sep">|</span>
+      <span id="readyCount">0 ready</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  </div>
+  <div class="header-actions">
+    <button id="exportBtn" style="display:none" class="success" onclick="exportJSON()">Export JSON</button>
+    <button id="headerNextBtn" style="display:none" class="primary" onclick="saveAndNext()">Save & next →</button>
+    <button onclick="resetEditor()">Load new</button>
+  </div>
+</header>
+
+<div class="load-screen" id="loadScreen">
+  <h2>Load content batch</h2>
+  <p>Paste your generated JSON below to begin the editing workflow.</p>
+  <textarea class="json-input" id="jsonInput" placeholder='Paste your content JSON array here...'></textarea>
+  <div class="load-actions">
+    <button class="primary" onclick="loadJSON()">Load posts</button>
+    <span class="error-msg" id="loadError"></span>
+  </div>
+</div>
+
+<div class="editor-layout" id="editorLayout">
+  <div class="filter-bar">
+    <span class="filter-label">Filter</span>
+    <button class="filter-btn active" data-type="all" onclick="setFilter('all', this)">All</button>
+    <button class="filter-btn" data-type="good_morning" onclick="setFilter('good_morning', this)">Morning</button>
+    <button class="filter-btn" data-type="thread" onclick="setFilter('thread', this)">Thread</button>
+    <button class="filter-btn" data-type="experimental" onclick="setFilter('experimental', this)">Experimental</button>
+    <button class="filter-btn" data-type="not_ready" onclick="setFilter('not_ready', this)">Not ready</button>
+  </div>
+
+  <div id="postArea"></div>
+
+  <div class="nav-bar">
+    <span class="nav-info" id="navInfo"></span>
+    <div class="nav-actions">
+      <label class="nav-ready-toggle" id="navReadyToggle">
+        <input type="checkbox" id="navReadyCheck" onchange="toggleReadyFromNav(this)">
+        <div class="toggle-dot"></div>
+        <span class="toggle-label">Not ready</span>
+      </label>
+      <button onclick="navigate(-1)" id="prevBtn" disabled>← Prev</button>
+      <button onclick="saveAndNext()" class="primary" id="nextBtn">Save & next →</button>
+    </div>
+  </div>
+</div>
+
+<div class="complete-screen" id="completeScreen">
+  <h2>Batch complete</h2>
+  <p>All posts reviewed. Export your updated JSON to continue.</p>
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-num" id="statTotal">0</div>
+      <div class="stat-label">Total posts</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" id="statReady">0</div>
+      <div class="stat-label">Ready to publish</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" id="statEdited">0</div>
+      <div class="stat-label">Edited</div>
+    </div>
+  </div>
+  <button class="success" onclick="exportJSON()" style="font-size:14px; padding: 10px 28px;">Export JSON</button>
+  <br><br>
+  <button onclick="goToIndex(0)">Review from start</button>
+</div>
+
+<script>
+let data = [];
+let filtered = [];
+let currentFilter = 'all';
+let currentIndex = 0;
+
+function loadJSON() {
+  const raw = document.getElementById('jsonInput').value.trim();
+  const errEl = document.getElementById('loadError');
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('Expected a JSON array');
+    data = parsed.map(item => ({
+      ...item,
+      edited_posts: item.edited_posts || item.posts.map(p => ({ text: '' })),
+      schedule_ready: item.schedule_ready || false
+    }));
+    errEl.textContent = '';
+    initEditor();
+  } catch(e) {
+    errEl.textContent = 'Invalid JSON: ' + e.message;
+  }
+}
+
+function initEditor() {
+  document.getElementById('loadScreen').style.display = 'none';
+  document.getElementById('editorLayout').classList.add('active');
+  document.getElementById('progressWrap').style.display = 'flex';
+  document.getElementById('exportBtn').style.display = 'inline-block';
+  document.getElementById('headerNextBtn').style.display = 'inline-block';
+  applyFilter();
+  goToIndex(0);
+}
+
+function setFilter(type, el) {
+  currentFilter = type;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  saveCurrentEdits();
+  applyFilter();
+  goToIndex(0);
+}
+
+function applyFilter() {
+  if (currentFilter === 'all') {
+    filtered = data.map((_, i) => i);
+  } else if (currentFilter === 'not_ready') {
+    filtered = data.map((item, i) => !item.schedule_ready ? i : -1).filter(i => i !== -1);
+  } else {
+    filtered = data.map((item, i) => item.type === currentFilter ? i : -1).filter(i => i !== -1);
+  }
+}
+
+function goToIndex(i) {
+  currentIndex = i;
+  renderCurrent();
+}
+
+function renderCurrent() {
+  if (filtered.length === 0) {
+    document.getElementById('postArea').innerHTML = '<p style="color:var(--text-muted);padding:40px 0;text-align:center">No posts match this filter.</p>';
+    document.getElementById('navInfo').textContent = '';
+    return;
+  }
+
+  const dataIdx = filtered[currentIndex];
+  const item = data[dataIdx];
+  const typeLabel = item.type.replace(/_/g,' ');
+  const day = item.day;
+  const dateStr = item.publish_at ? new Date(item.publish_at).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
+
+  let rowsHTML = item.posts.map((post, pi) => {
+    const edited = item.edited_posts[pi]?.text || '';
+    const isThread = item.posts.length > 1;
+    const isNew = post._new === true;
+    const originalSide = isNew
+      ? `<div class="side-label new-post-label">↳ New post</div><div class="original-text" style="color:var(--text-dim);font-style:italic">No original — write your new post on the right.</div>`
+      : `${isThread ? `<div class="thread-num">Post ${pi + 1} of ${item.posts.length}</div>` : ''}
+         <div class="side-label">Original</div>
+         <div class="original-text">${escapeHtml(post.text)}</div>`;
+    return `
+      <div class="post-row" id="row_${pi}">
+        <div class="post-side">
+          ${originalSide}
+        </div>
+        <div class="post-side">
+          ${!isNew && isThread ? `<div class="thread-num" style="opacity:0">&nbsp;</div>` : ''}
+          <div class="side-label" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Edited version</span>
+            <div style="display:flex;gap:6px;">
+              ${!isNew ? `<button onclick="copyOriginal(${pi})" style="font-size:10px;padding:2px 8px;border-radius:3px;opacity:0.6;" title="Copy original into edit field">Copy original</button>` : ''}
+              ${isNew ? `<button class="delete-post-btn" onclick="deletePost(${pi})" title="Remove this post">✕ Remove</button>` : ''}
+            </div>
+          </div>
+          <textarea class="edit-area" id="edit_${pi}" placeholder="${isNew ? 'Write your new post here...' : 'Leave blank to publish original as-is...'}" oninput="updateCharCount(this, ${pi})">${escapeHtml(edited)}</textarea>
+          <div class="char-count" id="count_${pi}">${edited.length} chars</div>
+        </div>
+      </div>
+      <div class="add-post-row">
+        <div class="add-post-divider"></div>
+        <button class="add-post-btn" onclick="addPostBelow(${pi})">+ add post below</button>
+        <div class="add-post-divider"></div>
+      </div>`; 
+  }).join('');
+
+  const isReady = item.schedule_ready;
+  document.getElementById('postArea').innerHTML = `
+    <div class="post-card">
+      <div class="card-header">
+        <span class="type-badge badge-${item.type}">${typeLabel}</span>
+        <span style="font-size:12px;color:var(--text-muted)">Day ${day}</span>
+        <span style="font-size:12px;color:var(--text-dim)">${dateStr}</span>
+        <label class="ready-toggle ${isReady ? 'checked' : ''}" id="readyToggle">
+          <input type="checkbox" id="readyCheck" ${isReady ? 'checked' : ''} onchange="toggleReady(this)">
+          <div class="toggle-dot"></div>
+          <span class="toggle-label">${isReady ? 'Schedule ready' : 'Not ready'}</span>
+        </label>
+      </div>
+      ${rowsHTML}
+    </div>`;
+
+  updateNav();
+  updateProgress();
+  syncNavToggle(isReady);
+  setTimeout(autoGrowAll, 10);
+}
+
+function toggleReadyFromNav(checkbox) {
+  const dataIdx = filtered[currentIndex];
+  data[dataIdx].schedule_ready = checkbox.checked;
+  // sync card header toggle
+  const cardToggle = document.getElementById('readyToggle');
+  const cardCheck = document.getElementById('readyCheck');
+  if (cardToggle && cardCheck) {
+    cardCheck.checked = checkbox.checked;
+    cardToggle.classList.toggle('checked', checkbox.checked);
+    cardToggle.querySelector('.toggle-label').textContent = checkbox.checked ? 'Schedule ready' : 'Not ready';
+  }
+  syncNavToggle(checkbox.checked);
+  updateProgress();
+}
+
+function syncNavToggle(isReady) {
+  const navToggle = document.getElementById('navReadyToggle');
+  const navCheck = document.getElementById('navReadyCheck');
+  if (!navToggle || !navCheck) return;
+  navCheck.checked = isReady;
+  navToggle.classList.toggle('checked', isReady);
+  navToggle.querySelector('.toggle-label').textContent = isReady ? 'Schedule ready' : 'Not ready';
+}
+
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+function autoGrowAll() {
+  document.querySelectorAll('textarea.edit-area').forEach(el => autoGrow(el));
+}
+
+function toggleReady(checkbox) {
+  const dataIdx = filtered[currentIndex];
+  data[dataIdx].schedule_ready = checkbox.checked;
+  const toggle = document.getElementById('readyToggle');
+  const label = toggle.querySelector('.toggle-label');
+  if (checkbox.checked) {
+    toggle.classList.add('checked');
+    label.textContent = 'Schedule ready';
+  } else {
+    toggle.classList.remove('checked');
+    label.textContent = 'Not ready';
+  }
+  syncNavToggle(checkbox.checked);
+  updateProgress();
+}
+
+function updateCharCount(el, idx) {
+  const len = el.value.length;
+  const countEl = document.getElementById('count_' + idx);
+  countEl.textContent = len + ' chars';
+  countEl.className = 'char-count' + (len > 500 ? ' over' : len > 280 ? ' warn' : '');
+  autoGrow(el);
+}
+
+function saveCurrentEdits() {
+  if (filtered.length === 0) return;
+  const dataIdx = filtered[currentIndex];
+  const item = data[dataIdx];
+  item.posts.forEach((_, pi) => {
+    const el = document.getElementById('edit_' + pi);
+    if (el) {
+      item.edited_posts[pi] = { text: el.value };
+    }
+  });
+}
+
+function saveAndNext() {
+  saveCurrentEdits();
+  if (currentIndex < filtered.length - 1) {
+    goToIndex(currentIndex + 1);
+    window.scrollTo(0, 0);
+  } else {
+    showComplete();
+  }
+}
+
+function navigate(dir) {
+  saveCurrentEdits();
+  goToIndex(Math.max(0, Math.min(filtered.length - 1, currentIndex + dir)));
+  window.scrollTo(0, 0);
+}
+
+function updateNav() {
+  document.getElementById('navInfo').textContent = `${currentIndex + 1} of ${filtered.length}`;
+  document.getElementById('prevBtn').disabled = currentIndex === 0;
+  document.getElementById('nextBtn').textContent = currentIndex < filtered.length - 1 ? 'Save & next →' : 'Finish ✓';
+}
+
+function updateProgress() {
+  const total = data.length;
+  const ready = data.filter(d => d.schedule_ready).length;
+  const edited = data.filter(d => d.edited_posts.some(p => p.text.trim().length > 0)).length;
+  document.getElementById('progressText').textContent = `${currentIndex + 1} / ${filtered.length}`;
+  document.getElementById('readyCount').textContent = `${ready} ready`;
+  document.getElementById('progressFill').style.width = (filtered.length > 0 ? ((currentIndex) / filtered.length * 100) : 0) + '%';
+}
+
+function showComplete() {
+  saveCurrentEdits();
+  document.getElementById('editorLayout').classList.remove('active');
+  const complete = document.getElementById('completeScreen');
+  complete.style.display = 'block';
+  const ready = data.filter(d => d.schedule_ready).length;
+  const edited = data.filter(d => d.edited_posts.some(p => p.text.trim().length > 0)).length;
+  document.getElementById('statTotal').textContent = data.length;
+  document.getElementById('statReady').textContent = ready;
+  document.getElementById('statEdited').textContent = edited;
+}
+
+function exportJSON() {
+  saveCurrentEdits();
+  const output = JSON.stringify(data, null, 2);
+  const blob = new Blob([output], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'content-edited.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function resetEditor() {
+  if (data.length && !confirm('Load new JSON? Unsaved edits will be lost.')) return;
+  data = []; filtered = []; currentIndex = 0;
+  document.getElementById('loadScreen').style.display = '';
+  document.getElementById('editorLayout').classList.remove('active');
+  document.getElementById('completeScreen').style.display = 'none';
+  document.getElementById('progressWrap').style.display = 'none';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('headerNextBtn').style.display = 'none';
+  document.getElementById('jsonInput').value = '';
+  document.getElementById('loadError').textContent = '';
+}
+
+function addPostBelow(pi) {
+  saveCurrentEdits();
+  const dataIdx = filtered[currentIndex];
+  const item = data[dataIdx];
+  item.posts.splice(pi + 1, 0, { text: '', _new: true });
+  item.edited_posts.splice(pi + 1, 0, { text: '' });
+  renderCurrent();
+  // focus the new textarea after render
+  setTimeout(() => {
+    const el = document.getElementById('edit_' + (pi + 1));
+    if (el) el.focus();
+  }, 50);
+}
+
+function deletePost(pi) {
+  saveCurrentEdits();
+  const dataIdx = filtered[currentIndex];
+  const item = data[dataIdx];
+  if (item.posts.length <= 1) return; // never delete the last post
+  item.posts.splice(pi, 1);
+  item.edited_posts.splice(pi, 1);
+  renderCurrent();
+}
+
+function copyOriginal(pi) {
+  const dataIdx = filtered[currentIndex];
+  const original = data[dataIdx].posts[pi].text;
+  const el = document.getElementById('edit_' + pi);
+  el.value = original;
+  updateCharCount(el, pi);
+  el.focus();
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
